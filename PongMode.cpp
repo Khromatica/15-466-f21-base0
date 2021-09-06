@@ -132,36 +132,34 @@ bool PongMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PongMode::update(float elapsed) {
-
-	static std::mt19937 mt; //mersenne twister pseudo-random number generator
-
-	//----- paddle update -----
-
-	{ //right player ai:
-		ai_offset_update -= elapsed;
-		if (ai_offset_update < elapsed) {
-			//update again in [0.5,1.0) seconds:
-			ai_offset_update = (mt() / float(mt.max())) * 0.5f + 0.5f;
-			ai_offset = (mt() / float(mt.max())) * 2.5f - 1.25f;
-		}
-		if (right_paddle.y < ball.y + ai_offset) {
-			right_paddle.y = std::min(ball.y + ai_offset, right_paddle.y + 2.0f * elapsed);
-		} else {
-			right_paddle.y = std::max(ball.y + ai_offset, right_paddle.y - 2.0f * elapsed);
-		}
+	// update active area
+	if (active_area.y == -court_radius.y + active_radius.y) {
+		active_area_up = false;
+	} else if (active_area.y == court_radius.y - active_radius.y) {
+		active_area_up = true;
 	}
 
+	if (active_area_up) {
+		active_area.y = active_area.y - active_area_velocity * elapsed;
+	} else {
+		active_area.y = active_area.y + active_area_velocity * elapsed;
+	}
+
+	// clamp active area to court
+	active_area.y = std::max(active_area.y, -court_radius.y + active_radius.y);
+	active_area.y = std::min(active_area.y, court_radius.y - active_radius.y);
+
 	//clamp paddles to court:
-	right_paddle.y = std::max(right_paddle.y, -court_radius.y + paddle_radius.y);
-	right_paddle.y = std::min(right_paddle.y,  court_radius.y - paddle_radius.y);
+	//right_paddle.y = std::max(right_paddle.y, -court_radius.y + paddle_radius.y);
+	//right_paddle.y = std::min(right_paddle.y,  court_radius.y - paddle_radius.y);
 
 	left_paddle.y = std::max(left_paddle.y, -court_radius.y + paddle_radius.y);
 	left_paddle.y = std::min(left_paddle.y,  court_radius.y - paddle_radius.y);
 
 	//----- ball update -----
 
-	//speed of ball doubles every four points:
-	float speed_multiplier = 4.0f * std::pow(2.0f, (left_score + right_score) / 4.0f);
+	//speed of ball doubles every five points:
+	float speed_multiplier = 4.0f * std::pow(2.0f, left_score / 5.0f);
 
 	//velocity cap, though (otherwise ball can pass through paddles):
 	speed_multiplier = std::min(speed_multiplier, 10.0f);
@@ -203,7 +201,7 @@ void PongMode::update(float elapsed) {
 		}
 	};
 	paddle_vs_ball(left_paddle);
-	paddle_vs_ball(right_paddle);
+	// paddle_vs_ball(right_paddle);
 
 	//court walls:
 	if (ball.y > court_radius.y - ball_radius.y) {
@@ -218,19 +216,45 @@ void PongMode::update(float elapsed) {
 			ball_velocity.y = -ball_velocity.y;
 		}
 	}
-
-	if (ball.x > court_radius.x - ball_radius.x) {
-		ball.x = court_radius.x - ball_radius.x;
+	
+	if (ball.x > right_wall.x - right_wall_radius.x - ball_radius.x) {
+		ball.x = right_wall.x - ball_radius.x - right_wall_radius.x;
+		//ball_velocity.x = 0.0f;
+		//ball_velocity.y = 0.0f;
 		if (ball_velocity.x > 0.0f) {
 			ball_velocity.x = -ball_velocity.x;
+			// left_score += 1;
+		}
+		
+		float active_top = active_area.y + active_radius.y;
+		float active_bottom = active_area.y - active_radius.y;
+
+		float ball_top = ball.y + ball_radius.y;
+		float ball_bottom = ball.y - ball_radius.y;
+
+		float strictness = 0.1f;
+
+		bool ball_overlaps_above = (ball_top + strictness > active_top) && (ball_bottom + strictness < active_top);
+		bool ball_overlaps_below = (ball_bottom - strictness < active_bottom) && (ball_top - strictness > active_bottom);
+		bool ball_overlaps_inside = (ball_top < active_top) && (ball_bottom > active_bottom);
+
+		if (ball_overlaps_above || ball_overlaps_below || ball_overlaps_inside) {
 			left_score += 1;
+			if (left_score % 3 == 0) {
+				active_area_velocity += 1.0f;
+				active_area_velocity = std::min(active_area_velocity, 12.0f);
+			}
+			if (left_score % 5 == 0) {
+				active_radius.y -= 0.15f;
+				active_radius.y = std::max(active_radius.y, 0.45f);
+			}
 		}
 	}
+
 	if (ball.x < -court_radius.x + ball_radius.x) {
 		ball.x = -court_radius.x + ball_radius.x;
 		if (ball_velocity.x < 0.0f) {
 			ball_velocity.x = -ball_velocity.x;
-			right_score += 1;
 		}
 	}
 
@@ -253,9 +277,12 @@ void PongMode::update(float elapsed) {
 void PongMode::draw(glm::uvec2 const &drawable_size) {
 	//some nice colors from the course web page:
 	#define HEX_TO_U8VEC4( HX ) (glm::u8vec4( (HX >> 24) & 0xff, (HX >> 16) & 0xff, (HX >> 8) & 0xff, (HX) & 0xff ))
-	const glm::u8vec4 bg_color = HEX_TO_U8VEC4(0x193b59ff);
-	const glm::u8vec4 fg_color = HEX_TO_U8VEC4(0xf2d2b6ff);
+	const glm::u8vec4 bg_color = HEX_TO_U8VEC4(0x000000ff);
+	const glm::u8vec4 fg_color = HEX_TO_U8VEC4(0xffffffff);
 	const glm::u8vec4 shadow_color = HEX_TO_U8VEC4(0xf2ad94ff);
+	const glm::u8vec4 new_color = HEX_TO_U8VEC4(0xdd0000ff);
+	const glm::u8vec4 active_area_color = HEX_TO_U8VEC4(0x00ff00ff);
+
 	const std::vector< glm::u8vec4 > trail_colors = {
 		HEX_TO_U8VEC4(0xf2ad9488),
 		HEX_TO_U8VEC4(0xf2897288),
@@ -267,6 +294,7 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 	const float wall_radius = 0.05f;
 	const float shadow_offset = 0.07f;
 	const float padding = 0.14f; //padding between outside of walls and edge of window
+	
 
 	//---- compute vertices to draw ----
 
@@ -294,7 +322,7 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 	draw_rectangle(glm::vec2( 0.0f,-court_radius.y-wall_radius)+s, glm::vec2(court_radius.x, wall_radius), shadow_color);
 	draw_rectangle(glm::vec2( 0.0f, court_radius.y+wall_radius)+s, glm::vec2(court_radius.x, wall_radius), shadow_color);
 	draw_rectangle(left_paddle+s, paddle_radius, shadow_color);
-	draw_rectangle(right_paddle+s, paddle_radius, shadow_color);
+	//draw_rectangle(right_paddle+s, paddle_radius, shadow_color);
 	draw_rectangle(ball+s, ball_radius, shadow_color);
 
 	//ball's trail:
@@ -351,8 +379,11 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 
 	//paddles:
 	draw_rectangle(left_paddle, paddle_radius, fg_color);
-	draw_rectangle(right_paddle, paddle_radius, fg_color);
-	
+	//draw_rectangle(right_paddle, paddle_radius, fg_color);
+
+	// New active area to hit
+	draw_rectangle(right_wall, right_wall_radius, new_color);
+	draw_rectangle(active_area, active_radius, active_area_color);
 
 	//ball:
 	draw_rectangle(ball, ball_radius, fg_color);
@@ -362,11 +393,11 @@ void PongMode::draw(glm::uvec2 const &drawable_size) {
 	for (uint32_t i = 0; i < left_score; ++i) {
 		draw_rectangle(glm::vec2( -court_radius.x + (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
 	}
+	/*
 	for (uint32_t i = 0; i < right_score; ++i) {
 		draw_rectangle(glm::vec2( court_radius.x - (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
 	}
-
-
+	*/
 
 	//------ compute court-to-window transform ------
 

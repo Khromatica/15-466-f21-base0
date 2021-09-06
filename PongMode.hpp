@@ -23,18 +23,26 @@ struct PongMode : Mode {
 
 	//----- game state -----
 
+	float active_area_velocity = 4.0f;
+	bool active_area_up = false;
+
+	float width_mult = 1.5f;
+
 	glm::vec2 court_radius = glm::vec2(7.0f, 5.0f);
 	glm::vec2 paddle_radius = glm::vec2(0.2f, 1.0f);
 	glm::vec2 ball_radius = glm::vec2(0.2f, 0.2f);
+	glm::vec2 right_wall_radius = glm::vec2(paddle_radius.x * width_mult, court_radius.y-0.035f);
+	glm::vec2 active_radius = glm::vec2(right_wall_radius.x, 1.0f);
 
 	glm::vec2 left_paddle = glm::vec2(-court_radius.x + 0.5f, 0.0f);
 	glm::vec2 right_paddle = glm::vec2( court_radius.x - 0.5f, 0.0f);
+	glm::vec2 right_wall = glm::vec2(court_radius.x - paddle_radius.x * width_mult, -0.035f);
+	glm::vec2 active_area = glm::vec2(right_wall.x, 0.0f);
 
 	glm::vec2 ball = glm::vec2(0.0f, 0.0f);
-	glm::vec2 ball_velocity = glm::vec2(-1.0f, 0.0f);
+	glm::vec2 ball_velocity = glm::vec2(-1.5f, 0.0f);
 
 	uint32_t left_score = 0;
-	uint32_t right_score = 0;
 
 	float ai_offset = 0.0f;
 	float ai_offset_update = 0.0f;
